@@ -1,21 +1,32 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { supabase } from "./supabase";
 
 const WHATSAPP_LINK = "https://w.app/oehxvr";
 
-const ACCESS_CODES = {
-  MARIA1: {
-    nome: "Maria Auxiliadora dos Santos Paz",
-    cpf: "892.023.256-34",
-    cargo: "Auxiliar de Secretaria Escolar",
-    orgao: "SEDUC",
-    mat1: "28.757-1",
-    mat2: "",
-    unid1: "CEMEI Tropical",
-    unid2: "",
-    sit: "Efetivo(a)",
-    tel: "(31) 98676-4711",
-    email: "maspaz2005@hotmail.com",
-  },
+const mapSupabaseUser = (dbUser) => ({
+  id: dbUser.id,
+  nome: dbUser.nome || "",
+  cpf: dbUser.cpf || "",
+  cargo: dbUser.cargo || "",
+  orgao: dbUser.orgao || "",
+  mat1: dbUser.mat1 || "",
+  mat2: dbUser.mat2 || "",
+  unid1: dbUser.unid1 || "",
+  unid2: dbUser.unid2 || "",
+  sit: dbUser.sit || "Efetivo(a)",
+  tel: dbUser.telefone || dbUser.tel || "",
+  email: dbUser.email || "",
+  codigo: dbUser.codigo || "",
+  status: dbUser.status || "Ativo",
+  validade: dbUser.validade || "",
+});
+
+const isExpired = (validade) => {
+  if (!validade) return false;
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  const vencimento = new Date(`${validade}T23:59:59`);
+  return vencimento < hoje;
 };
 
 const emptyUser = {
@@ -104,18 +115,7 @@ export default function App() {
 
     const savedCode = localStorage.getItem("atestado_facil_last_code");
     if (savedCode) {
-      const saved = localStorage.getItem(`atestado_facil_${savedCode}`);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        setAuthorizedCode(savedCode);
-        setAccessCode(savedCode);
-        setDraftUser(parsed.user);
-        setUser(parsed.user);
-        setAcceptedTerms(true);
-        setScreen("home");
-        const savedId = localStorage.getItem(`saved_identidade_${savedCode}`);
-        setIdentidadeDoc(savedId ? JSON.parse(savedId) : null);
-      }
+      validarCodigoSupabase(savedCode, true);
     }
   }, []);
 
@@ -135,30 +135,67 @@ export default function App() {
     go("terms");
   };
 
-  const validateAccessCode = () => {
-    const code = accessCode.trim().toUpperCase();
-    const allowedUser = ACCESS_CODES[code];
-    if (!allowedUser) {
-      alert("Código inválido ou não liberado. Entre em contato com o suporte.");
+  const validarCodigoSupabase = async (codigoInformado = accessCode, silencioso = false) => {
+    const code = codigoInformado.trim().toUpperCase();
+
+    if (!code) {
+      if (!silencioso) alert("Digite o código de acesso.");
       return;
     }
+
+    const { data, error } = await supabase
+      .from("usuarios")
+      .select("*")
+      .eq("codigo", code)
+      .maybeSingle();
+
+    if (error) {
+      console.error(error);
+      if (!silencioso) alert("Erro ao consultar o código no Supabase.");
+      return;
+    }
+
+    if (!data) {
+      if (!silencioso) alert("Código inválido ou não liberado. Entre em contato com o suporte.");
+      return;
+    }
+
+    if ((data.status || "").toLowerCase() === "bloqueado") {
+      alert("Este acesso está bloqueado. Entre em contato com o suporte.");
+      resetAccess(false);
+      return;
+    }
+
+    if (isExpired(data.validade)) {
+      alert("Este acesso venceu. Entre em contato com o suporte para renovar.");
+      resetAccess(false);
+      return;
+    }
+
+    const supabaseUser = mapSupabaseUser(data);
     setAuthorizedCode(code);
+    setAccessCode(code);
+
     const saved = localStorage.getItem(`atestado_facil_${code}`);
     if (saved) {
       const parsed = JSON.parse(saved);
-      setDraftUser(parsed.user);
-      setUser(parsed.user);
+      const usuarioFinal = { ...supabaseUser, ...parsed.user, id: supabaseUser.id, codigo: code, status: supabaseUser.status, validade: supabaseUser.validade };
+      setDraftUser(usuarioFinal);
+      setUser(usuarioFinal);
       setAcceptedTerms(true);
       go("home");
       return;
     }
-    setDraftUser({ ...emptyUser, ...allowedUser });
+
+    setDraftUser({ ...emptyUser, ...supabaseUser });
     go("register");
   };
 
+  const validateAccessCode = () => validarCodigoSupabase(accessCode, false);
+
   const updateDraft = (field, value) => setDraftUser((prev) => ({ ...prev, [field]: value }));
 
-  const activateAccess = () => {
+  const activateAccess = async () => {
     const required = ["nome", "cpf", "cargo", "orgao", "mat1", "unid1", "tel", "email"];
     const missing = required.find((field) => !String(draftUser[field] || "").trim());
     if (missing) {
@@ -169,15 +206,41 @@ export default function App() {
       alert("Você precisa aceitar os termos de uso e responsabilidade.");
       return;
     }
-    const finalUser = { ...draftUser };
+    const finalUser = { ...draftUser, codigo: authorizedCode };
+
+    // Salva localmente para o app continuar rápido no aparelho do usuário.
     localStorage.setItem(storageKey, JSON.stringify({ user: finalUser, activatedAt: new Date().toISOString() }));
     localStorage.setItem("atestado_facil_last_code", authorizedCode);
+
+    // Tenta também atualizar o Supabase com os dados completos do formulário.
+    // Se sua tabela ainda não tiver essas colunas, o app continua funcionando pelo localStorage.
+    try {
+      await supabase
+        .from("usuarios")
+        .update({
+          nome: finalUser.nome,
+          cpf: finalUser.cpf,
+          telefone: finalUser.tel,
+          email: finalUser.email,
+          cargo: finalUser.cargo,
+          orgao: finalUser.orgao,
+          mat1: finalUser.mat1,
+          mat2: finalUser.mat2,
+          unid1: finalUser.unid1,
+          unid2: finalUser.unid2,
+          sit: finalUser.sit,
+        })
+        .eq("codigo", authorizedCode);
+    } catch (error) {
+      console.warn("Não foi possível atualizar dados completos no Supabase:", error);
+    }
+
     setUser(finalUser);
     go("home");
   };
 
-  const resetAccess = () => {
-    if (!confirm("Deseja apagar o acesso salvo neste aparelho?")) return;
+  const resetAccess = (perguntar = true) => {
+    if (perguntar && !confirm("Deseja apagar o acesso salvo neste aparelho?")) return;
     if (storageKey) localStorage.removeItem(storageKey);
     if (identityKey) localStorage.removeItem(identityKey);
     localStorage.removeItem("atestado_facil_last_code");
@@ -386,7 +449,7 @@ export default function App() {
   const Topbar = ({ small, title, backTo, showReset }) => <div className="flex justify-between items-center px-5 pt-5 mb-4"><div><span className="text-sm font-black text-blue-700">{small}</span><p className="text-xl font-black text-slate-900 leading-tight">{title}</p></div>{backTo && <button onClick={() => go(backTo)} className="text-base font-black text-slate-600 underline">Voltar</button>}{showReset && <button onClick={resetAccess} className="text-sm font-black text-red-700 underline">Apagar</button>}</div>;
 
   if (screen === "welcome") return <Shell><Header badge="Bem-vindo" title="Atestado Fácil" subtitle="Preencha o Formulário Solicitação Perícia Médica de forma simples, com suporte e segurança." /><div className="p-5"><div className="bg-white rounded-3xl border-4 border-blue-100 p-5 shadow-sm"><h2 className="text-2xl font-black text-slate-900 mb-2">Entrar no app</h2><p className="text-slate-600 font-bold leading-relaxed">Use seu código de acesso para continuar.</p><button className={`${btnPrimary} mt-5`} onClick={() => go("code")}>TENHO CÓDIGO</button><a className={`${btnSecondary} mt-3 no-underline`} href={WHATSAPP_LINK} target="_blank" rel="noreferrer">SOLICITAR ACESSO</a><button onClick={() => openTerms("welcome")} className="w-full text-center text-slate-500 font-black underline text-sm mt-4">Termos e responsabilidade</button></div><div className="bg-blue-50 text-blue-900 border-2 border-blue-200 rounded-2xl p-4 mt-4 text-sm font-bold leading-relaxed">Ferramenta independente, sem vínculo oficial com Prefeitura ou órgão público.</div></div></Shell>;
-  if (screen === "code") return <Shell><Header badge="Código" title="Acesso liberado" subtitle="Digite o código informado pelo suporte." /><div className="p-5"><div className="bg-white rounded-3xl border-4 border-blue-100 p-5 shadow-sm"><h2 className="text-2xl font-black text-slate-900 mb-4">Código de acesso</h2><input value={accessCode} onChange={(e) => setAccessCode(e.target.value.toUpperCase())} placeholder="MARIA1" maxLength={12} className="w-full p-5 rounded-2xl border-4 border-slate-200 bg-slate-50 text-2xl font-black outline-none focus:border-blue-500 text-center tracking-[0.25em] uppercase" /><button className={`${btnPrimary} mt-5`} onClick={validateAccessCode}>CONTINUAR</button><button className={`${btnSecondary} mt-3`} onClick={() => go("welcome")}>VOLTAR</button></div></div></Shell>;
+  if (screen === "code") return <Shell><Header badge="Código" title="Acesso liberado" subtitle="Digite o código informado pelo suporte." /><div className="p-5"><div className="bg-white rounded-3xl border-4 border-blue-100 p-5 shadow-sm"><h2 className="text-2xl font-black text-slate-900 mb-4">Código de acesso</h2><input value={accessCode} onChange={(e) => setAccessCode(e.target.value.toUpperCase())} placeholder="CÓDIGO" maxLength={12} className="w-full p-5 rounded-2xl border-4 border-slate-200 bg-slate-50 text-2xl font-black outline-none focus:border-blue-500 text-center tracking-[0.25em] uppercase" /><button className={`${btnPrimary} mt-5`} onClick={validateAccessCode}>CONTINUAR</button><button className={`${btnSecondary} mt-3`} onClick={() => go("welcome")}>VOLTAR</button></div></div></Shell>;
   if (screen === "terms") return <Shell><Header badge="Termos" title="Responsabilidade" subtitle="Uso simples, transparente e independente." /><div className="p-5"><div className="bg-white rounded-3xl border-4 border-blue-100 p-5 shadow-sm"><h2 className="text-2xl font-black text-slate-900 mb-4">Antes de usar</h2><div className="max-h-[420px] overflow-auto bg-slate-50 border-4 border-dashed border-slate-200 rounded-2xl p-4 text-sm leading-relaxed text-slate-700 font-bold flex flex-col gap-3"><p><b>Ferramenta independente:</b> este app não possui vínculo oficial com Prefeitura, Secretaria ou órgão público.</p><p><b>Finalidade:</b> o sistema auxilia no preenchimento, organização e envio dos documentos informados.</p><p><b>Dados:</b> o usuário declara que as informações e documentos enviados são verdadeiros e de sua responsabilidade.</p><p><b>Dependência externa:</b> o funcionamento pode depender de formulário, e-mail ou plataforma de terceiros.</p><p><b>Alterações externas:</b> se o formulário oficial mudar, o app poderá ficar temporariamente indisponível até atualização.</p><p><b>Acesso individual:</b> o código é pessoal e vinculado aos dados cadastrados.</p><p><b>PWA:</b> remover o app, limpar dados ou trocar de aparelho pode exigir nova liberação.</p><p><b>Resultado:</b> o app não garante deferimento, prazo de resposta ou aceitação pelo órgão destinatário.</p></div><button className={`${btnPrimary} mt-5`} onClick={() => go(previousTermsScreen)}>ENTENDI</button></div></div></Shell>;
   if (screen === "register") return <Shell><Header badge="Primeiro acesso" title="Seus dados" subtitle="Preencha uma vez para gerar os próximos formulários." /><div className="p-5"><div className="bg-white rounded-3xl border-4 border-blue-100 p-5 shadow-sm"><h2 className="text-2xl font-black text-slate-900 mb-2">Dados do formulário</h2>{dataFields.map(([field, label, placeholder]) => <label key={field} className="block mt-4"><span className="block text-sm font-black text-slate-600 mb-2">{label}</span><input value={draftUser[field] || ""} onChange={(e) => updateDraft(field, e.target.value)} placeholder={placeholder} className="w-full p-4 rounded-2xl border-4 border-slate-200 bg-slate-50 text-lg font-bold outline-none focus:border-blue-500" /></label>)}<label className="block mt-4"><span className="block text-sm font-black text-slate-600 mb-2">Situação funcional</span><select value={draftUser.sit} onChange={(e) => updateDraft("sit", e.target.value)} className="w-full p-4 rounded-2xl border-4 border-slate-200 bg-slate-50 text-lg font-bold outline-none focus:border-blue-500"><option>Efetivo(a)</option><option>Comissionado(a)</option><option>Contratado(a)</option></select></label><label className="flex items-start gap-3 bg-slate-100 rounded-2xl p-4 mt-5"><input type="checkbox" checked={acceptedTerms} onChange={(e) => setAcceptedTerms(e.target.checked)} className="w-7 h-7 mt-1" /><span className="text-sm font-bold text-slate-700 leading-relaxed">Li e aceito os termos de uso e responsabilidade.</span></label><button className={`${btnPrimary} mt-5`} onClick={activateAccess}>ATIVAR ACESSO</button><button className={`${btnSecondary} mt-3`} onClick={() => openTerms("register")}>LER TERMOS</button></div></div></Shell>;
   if (screen === "home") return <Shell><Topbar small="Atestado Fácil" title={user?.nome?.split(" ")[0] || "Usuário"} showReset /><div className="p-5 pt-0"><div className="bg-gradient-to-br from-blue-700 to-blue-950 text-white rounded-3xl p-6 shadow-lg mb-4"><span className="inline-block bg-green-300 text-green-950 px-3 py-1 rounded-full text-sm font-black mb-4">Acesso ativo</span><h1 className="text-3xl font-black leading-tight">Olá, {user?.nome?.split(" ")[0]}!</h1><p className="text-blue-100 mt-3 text-lg leading-relaxed font-bold">Gere e envie seu formulário em poucos passos.</p></div><div className="grid grid-cols-2 gap-3 mb-4"><div className="bg-white rounded-2xl border-4 border-blue-100 p-4 text-center"><strong className="block text-2xl text-blue-700">Ativo</strong><span className="text-sm font-black text-slate-500">Status</span></div><div className="bg-white rounded-2xl border-4 border-blue-100 p-4 text-center"><strong className="block text-2xl text-blue-700">{sentCount}</strong><span className="text-sm font-black text-slate-500">Envios</span></div></div><div className="bg-white rounded-3xl border-4 border-blue-100 p-5 shadow-sm mb-4 flex items-center gap-4"><div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center text-2xl">📄</div><div><b className="text-xl font-black">Novo formulário</b><p className="text-sm text-slate-500 font-bold leading-relaxed">Informe o atestado, anexe os documentos e confira antes de enviar.</p></div></div><button className={btnPrimary} onClick={() => go("data")}>COMEÇAR ENVIO</button></div></Shell>;
