@@ -17,7 +17,7 @@ const mapSupabaseUser = (dbUser) => ({
   tel: dbUser.telefone || dbUser.tel || "",
   email: dbUser.email || "",
   codigo: dbUser.codigo || "",
-  status: dbUser.status || "Ativo",
+  status: dbUser.status || "Disponível",
   validade: dbUser.validade || "",
 });
 
@@ -135,6 +135,14 @@ export default function App() {
     go("terms");
   };
 
+  const normalizarStatus = (status) => String(status || "Disponível").trim().toLowerCase();
+
+  const addMonthsToToday = (months = 3) => {
+    const d = new Date();
+    d.setMonth(d.getMonth() + months);
+    return d.toISOString().split("T")[0];
+  };
+
   const validarCodigoSupabase = async (codigoInformado = accessCode, silencioso = false) => {
     const code = codigoInformado.trim().toUpperCase();
 
@@ -160,14 +168,17 @@ export default function App() {
       return;
     }
 
-    if ((data.status || "").toLowerCase() === "bloqueado") {
-      alert("Este acesso está bloqueado. Entre em contato com o suporte.");
+    const status = normalizarStatus(data.status);
+
+    if (status === "bloqueado") {
+      if (!silencioso) alert("Este acesso está bloqueado. Entre em contato com o suporte.");
       resetAccess(false);
       return;
     }
 
-    if (isExpired(data.validade)) {
-      alert("Este acesso venceu. Entre em contato com o suporte para renovar.");
+    if (status === "vencido" || isExpired(data.validade)) {
+      await supabase.from("usuarios").update({ status: "Vencido" }).eq("codigo", code);
+      if (!silencioso) alert("Este acesso venceu. Entre em contato com o suporte para renovar.");
       resetAccess(false);
       return;
     }
@@ -176,10 +187,28 @@ export default function App() {
     setAuthorizedCode(code);
     setAccessCode(code);
 
-    const saved = localStorage.getItem(`atestado_facil_${code}`);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      const usuarioFinal = { ...supabaseUser, ...parsed.user, id: supabaseUser.id, codigo: code, status: supabaseUser.status, validade: supabaseUser.validade };
+    // Fluxo novo: código disponível/pending abre cadastro. O usuário se vincula sozinho.
+    if (status === "disponível" || status === "disponivel" || status === "pendente") {
+      setDraftUser({ ...emptyUser, id: data.id, codigo: code, status: "Disponível" });
+      setUser(null);
+      setAcceptedTerms(false);
+      go("register");
+      return;
+    }
+
+    // Código ativo: entra direto usando os dados do Supabase.
+    if (status === "ativo") {
+      if (!supabaseUser.nome || !supabaseUser.cpf) {
+        setDraftUser({ ...emptyUser, ...supabaseUser, codigo: code, status: "Disponível" });
+        setUser(null);
+        setAcceptedTerms(false);
+        go("register");
+        return;
+      }
+
+      const usuarioFinal = { ...supabaseUser, codigo: code, status: "Ativo" };
+      localStorage.setItem(`atestado_facil_${code}`, JSON.stringify({ user: usuarioFinal, activatedAt: data.usado_em || new Date().toISOString() }));
+      localStorage.setItem("atestado_facil_last_code", code);
       setDraftUser(usuarioFinal);
       setUser(usuarioFinal);
       setAcceptedTerms(true);
@@ -187,8 +216,7 @@ export default function App() {
       return;
     }
 
-    setDraftUser({ ...emptyUser, ...supabaseUser });
-    go("register");
+    if (!silencioso) alert("Este código ainda não está liberado para uso. Entre em contato com o suporte.");
   };
 
   const validateAccessCode = () => validarCodigoSupabase(accessCode, false);
@@ -206,34 +234,44 @@ export default function App() {
       alert("Você precisa aceitar os termos de uso e responsabilidade.");
       return;
     }
-    const finalUser = { ...draftUser, codigo: authorizedCode };
 
-    // Salva localmente para o app continuar rápido no aparelho do usuário.
-    localStorage.setItem(storageKey, JSON.stringify({ user: finalUser, activatedAt: new Date().toISOString() }));
-    localStorage.setItem("atestado_facil_last_code", authorizedCode);
+    const validadeAutomatica = addMonthsToToday(3);
+    const usadoEm = new Date().toISOString();
+    const finalUser = {
+      ...draftUser,
+      codigo: authorizedCode,
+      status: "Ativo",
+      validade: validadeAutomatica,
+    };
 
-    // Tenta também atualizar o Supabase com os dados completos do formulário.
-    // Se sua tabela ainda não tiver essas colunas, o app continua funcionando pelo localStorage.
-    try {
-      await supabase
-        .from("usuarios")
-        .update({
-          nome: finalUser.nome,
-          cpf: finalUser.cpf,
-          telefone: finalUser.tel,
-          email: finalUser.email,
-          cargo: finalUser.cargo,
-          orgao: finalUser.orgao,
-          mat1: finalUser.mat1,
-          mat2: finalUser.mat2,
-          unid1: finalUser.unid1,
-          unid2: finalUser.unid2,
-          sit: finalUser.sit,
-        })
-        .eq("codigo", authorizedCode);
-    } catch (error) {
-      console.warn("Não foi possível atualizar dados completos no Supabase:", error);
+    const { error } = await supabase
+      .from("usuarios")
+      .update({
+        nome: finalUser.nome,
+        cpf: finalUser.cpf,
+        telefone: finalUser.tel,
+        email: finalUser.email,
+        cargo: finalUser.cargo,
+        orgao: finalUser.orgao,
+        mat1: finalUser.mat1,
+        mat2: finalUser.mat2,
+        unid1: finalUser.unid1,
+        unid2: finalUser.unid2,
+        sit: finalUser.sit,
+        status: "Ativo",
+        validade: validadeAutomatica,
+        usado_em: usadoEm,
+      })
+      .eq("codigo", authorizedCode);
+
+    if (error) {
+      console.error(error);
+      alert("Erro ao ativar o acesso. Tente novamente ou chame o suporte.");
+      return;
     }
+
+    localStorage.setItem(storageKey, JSON.stringify({ user: finalUser, activatedAt: usadoEm }));
+    localStorage.setItem("atestado_facil_last_code", authorizedCode);
 
     setUser(finalUser);
     go("home");
