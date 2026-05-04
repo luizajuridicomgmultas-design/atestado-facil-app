@@ -6,7 +6,7 @@ const WHATSAPP_LINK = "https://w.app/oehxvr";
 const mapSupabaseUser = (dbUser) => ({
   id: dbUser.id,
   nome: dbUser.nome || "",
-  cpf: dbUser.cpf || "",
+  cpf: formatCPF(dbUser.cpf || ""),
   cargo: dbUser.cargo || "",
   orgao: dbUser.orgao || "",
   mat1: dbUser.mat1 || "",
@@ -14,7 +14,7 @@ const mapSupabaseUser = (dbUser) => ({
   unid1: dbUser.unid1 || "",
   unid2: dbUser.unid2 || "",
   sit: dbUser.sit || "Efetivo(a)",
-  tel: dbUser.telefone || dbUser.tel || "",
+  tel: formatPhone(dbUser.telefone || dbUser.tel || ""),
   email: dbUser.email || "",
   codigo: dbUser.codigo || "",
   status: dbUser.status || "Disponível",
@@ -41,6 +41,77 @@ const emptyUser = {
   sit: "Efetivo(a)",
   tel: "",
   email: "",
+};
+
+const onlyDigits = (value) => String(value || "").replace(/\D/g, "");
+
+const formatCPF = (value) => {
+  const v = onlyDigits(value).slice(0, 11);
+  return v
+    .replace(/(\d{3})(\d)/, "$1.$2")
+    .replace(/(\d{3})(\d)/, "$1.$2")
+    .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+};
+
+const formatPhone = (value) => {
+  const v = onlyDigits(value).slice(0, 11);
+  if (v.length <= 10) {
+    return v
+      .replace(/^(\d{2})(\d)/, "($1) $2")
+      .replace(/(\d{4})(\d{1,4})$/, "$1-$2");
+  }
+  return v
+    .replace(/^(\d{2})(\d)/, "($1) $2")
+    .replace(/(\d{5})(\d{1,4})$/, "$1-$2");
+};
+
+const isValidCPF = (value) => {
+  const cpf = onlyDigits(value);
+  if (cpf.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(cpf)) return false;
+
+  const calcDigit = (base) => {
+    let sum = 0;
+    for (let i = 0; i < base.length; i += 1) {
+      sum += Number(base[i]) * (base.length + 1 - i);
+    }
+    const rest = (sum * 10) % 11;
+    return rest === 10 ? 0 : rest;
+  };
+
+  const digit1 = calcDigit(cpf.slice(0, 9));
+  const digit2 = calcDigit(cpf.slice(0, 10));
+  return digit1 === Number(cpf[9]) && digit2 === Number(cpf[10]);
+};
+
+const isValidPhone = (value) => {
+  const phone = onlyDigits(value);
+  if (phone.length !== 10 && phone.length !== 11) return false;
+  if (/^(\d)\1+$/.test(phone)) return false;
+  return true;
+};
+
+const normalizeDraftField = (field, value) => {
+  if (field === "cpf") return formatCPF(value);
+  if (field === "tel") return formatPhone(value);
+  return value;
+};
+
+const getFieldError = (field, value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  if (field === "cpf") {
+    if (onlyDigits(raw).length < 11) return "CPF incompleto.";
+    if (!isValidCPF(raw)) return "CPF inválido.";
+  }
+
+  if (field === "tel") {
+    if (onlyDigits(raw).length < 10) return "Telefone incompleto.";
+    if (!isValidPhone(raw)) return "Telefone inválido.";
+  }
+
+  return "";
 };
 
 
@@ -245,7 +316,7 @@ export default function App() {
 
   const validateAccessCode = () => validarCodigoSupabase(accessCode, false);
 
-  const updateDraft = (field, value) => setDraftUser((prev) => ({ ...prev, [field]: value }));
+  const updateDraft = (field, value) => setDraftUser((prev) => ({ ...prev, [field]: normalizeDraftField(field, value) }));
 
   const activateAccess = async () => {
     const required = ["nome", "cpf", "cargo", "orgao", "mat1", "unid1", "tel", "email"];
@@ -254,6 +325,17 @@ export default function App() {
       alert("Preencha todos os dados obrigatórios antes de continuar.");
       return;
     }
+
+    if (!isValidCPF(draftUser.cpf)) {
+      alert("Confira o CPF. Ele está incompleto ou inválido.");
+      return;
+    }
+
+    if (!isValidPhone(draftUser.tel)) {
+      alert("Confira o telefone. Ele está incompleto ou inválido.");
+      return;
+    }
+
     if (!acceptedTerms) {
       alert("Você precisa aceitar os termos de uso e responsabilidade.");
       return;
@@ -510,7 +592,53 @@ export default function App() {
   if (screen === "welcome") return <Shell><Header badge="Bem-vindo" title="Atestado Fácil" subtitle="Preencha o Formulário Solicitação Perícia Médica de forma simples, com suporte e segurança." /><div className="p-5"><div className="bg-white rounded-3xl border-4 border-blue-100 p-5 shadow-sm"><h2 className="text-2xl font-black text-slate-900 mb-2">Entrar no app</h2><p className="text-slate-600 font-bold leading-relaxed">Use seu código de acesso para continuar.</p><button className={`${btnPrimary} mt-5`} onClick={() => go("code")}>TENHO CÓDIGO</button><a className={`${btnSecondary} mt-3 no-underline`} href={WHATSAPP_LINK} target="_blank" rel="noreferrer">SOLICITAR ACESSO</a><button onClick={() => openTerms("welcome")} className="w-full text-center text-slate-500 font-black underline text-sm mt-4">Termos e responsabilidade</button></div><div className="bg-blue-50 text-blue-900 border-2 border-blue-200 rounded-2xl p-4 mt-4 text-sm font-bold leading-relaxed">Ferramenta independente, sem vínculo oficial com Prefeitura ou órgão público.</div></div></Shell>;
   if (screen === "code") return <Shell><Header badge="Código" title="Acesso liberado" subtitle="Digite o código informado pelo suporte." /><div className="p-5"><div className="bg-white rounded-3xl border-4 border-blue-100 p-5 shadow-sm"><h2 className="text-2xl font-black text-slate-900 mb-4">Código de acesso</h2><input value={accessCode} onChange={(e) => setAccessCode(e.target.value.toUpperCase())} placeholder="CÓDIGO" maxLength={12} className="w-full p-5 rounded-2xl border-4 border-slate-200 bg-slate-50 text-2xl font-black outline-none focus:border-blue-500 text-center tracking-[0.25em] uppercase" /><button className={`${btnPrimary} mt-5`} onClick={validateAccessCode}>CONTINUAR</button><button className={`${btnSecondary} mt-3`} onClick={() => go("welcome")}>VOLTAR</button></div></div></Shell>;
   if (screen === "terms") return <Shell><Header badge="Termos" title="Responsabilidade" subtitle="Uso simples, transparente e independente." /><div className="p-5"><div className="bg-white rounded-3xl border-4 border-blue-100 p-5 shadow-sm"><h2 className="text-2xl font-black text-slate-900 mb-4">Antes de usar</h2><div className="max-h-[420px] overflow-auto bg-slate-50 border-4 border-dashed border-slate-200 rounded-2xl p-4 text-sm leading-relaxed text-slate-700 font-bold flex flex-col gap-3"><p><b>Ferramenta independente:</b> este app não possui vínculo oficial com Prefeitura, Secretaria ou órgão público.</p><p><b>Finalidade:</b> o sistema auxilia no preenchimento, organização e envio dos documentos informados.</p><p><b>Dados:</b> o usuário declara que as informações e documentos enviados são verdadeiros e de sua responsabilidade.</p><p><b>Dependência externa:</b> o funcionamento pode depender de formulário, e-mail ou plataforma de terceiros.</p><p><b>Alterações externas:</b> se o formulário oficial mudar, o app poderá ficar temporariamente indisponível até atualização.</p><p><b>Acesso individual:</b> o código é pessoal e vinculado aos dados cadastrados.</p><p><b>PWA:</b> remover o app, limpar dados ou trocar de aparelho pode exigir nova liberação.</p><p><b>Resultado:</b> o app não garante deferimento, prazo de resposta ou aceitação pelo órgão destinatário.</p></div><button className={`${btnPrimary} mt-5`} onClick={() => go(previousTermsScreen)}>ENTENDI</button></div></div></Shell>;
-  if (screen === "register") return <Shell><Header badge="Primeiro acesso" title="Seus dados" subtitle="Preencha uma vez para gerar os próximos formulários." /><div className="p-5"><div className="bg-white rounded-3xl border-4 border-blue-100 p-5 shadow-sm"><h2 className="text-2xl font-black text-slate-900 mb-2">Dados do formulário</h2>{dataFields.map(([field, label, placeholder]) => <label key={field} className="block mt-4"><span className="block text-sm font-black text-slate-600 mb-2">{label}</span><input value={draftUser[field] || ""} onChange={(e) => updateDraft(field, e.target.value)} placeholder={placeholder} className="w-full p-4 rounded-2xl border-4 border-slate-200 bg-slate-50 text-lg font-bold outline-none focus:border-blue-500" /></label>)}<label className="block mt-4"><span className="block text-sm font-black text-slate-600 mb-2">Situação funcional</span><select value={draftUser.sit} onChange={(e) => updateDraft("sit", e.target.value)} className="w-full p-4 rounded-2xl border-4 border-slate-200 bg-slate-50 text-lg font-bold outline-none focus:border-blue-500"><option>Efetivo(a)</option><option>Comissionado(a)</option><option>Contratado(a)</option></select></label><label className="flex items-start gap-3 bg-slate-100 rounded-2xl p-4 mt-5"><input type="checkbox" checked={acceptedTerms} onChange={(e) => setAcceptedTerms(e.target.checked)} className="w-7 h-7 mt-1" /><span className="text-sm font-bold text-slate-700 leading-relaxed">Li e aceito os termos de uso e responsabilidade.</span></label><button className={`${btnPrimary} mt-5`} onClick={activateAccess}>ATIVAR ACESSO</button><button className={`${btnSecondary} mt-3`} onClick={() => openTerms("register")}>LER TERMOS</button></div></div></Shell>;
+  if (screen === "register") return (
+    <Shell>
+      <Header badge="Primeiro acesso" title="Seus dados" subtitle="Preencha uma vez para gerar os próximos formulários." />
+      <div className="p-5">
+        <div className="bg-white rounded-3xl border-4 border-blue-100 p-5 shadow-sm">
+          <h2 className="text-2xl font-black text-slate-900 mb-2">Dados do formulário</h2>
+          {dataFields.map(([field, label, placeholder]) => {
+            const error = getFieldError(field, draftUser[field]);
+            const hasError = Boolean(error);
+            const isValidatedField = field === "cpf" || field === "tel";
+
+            return (
+              <label key={field} className="block mt-4">
+                <span className="block text-sm font-black text-slate-600 mb-2">{label}</span>
+                <input
+                  value={draftUser[field] || ""}
+                  onChange={(e) => updateDraft(field, e.target.value)}
+                  placeholder={placeholder}
+                  inputMode={field === "cpf" || field === "tel" ? "numeric" : undefined}
+                  maxLength={field === "cpf" ? 14 : field === "tel" ? 15 : undefined}
+                  className={`w-full p-4 rounded-2xl border-4 bg-slate-50 text-lg font-bold outline-none ${hasError ? "border-red-400 focus:border-red-600" : "border-slate-200 focus:border-blue-500"}`}
+                />
+                {hasError && <p className="text-red-600 text-sm font-black mt-2">{error}</p>}
+                {isValidatedField && !hasError && draftUser[field] && (
+                  <p className="text-green-700 text-sm font-black mt-2">Formato correto.</p>
+                )}
+              </label>
+            );
+          })}
+          <label className="block mt-4">
+            <span className="block text-sm font-black text-slate-600 mb-2">Situação funcional</span>
+            <select value={draftUser.sit} onChange={(e) => updateDraft("sit", e.target.value)} className="w-full p-4 rounded-2xl border-4 border-slate-200 bg-slate-50 text-lg font-bold outline-none focus:border-blue-500">
+              <option>Efetivo(a)</option>
+              <option>Comissionado(a)</option>
+              <option>Contratado(a)</option>
+            </select>
+          </label>
+          <label className="flex items-start gap-3 bg-slate-100 rounded-2xl p-4 mt-5">
+            <input type="checkbox" checked={acceptedTerms} onChange={(e) => setAcceptedTerms(e.target.checked)} className="w-7 h-7 mt-1" />
+            <span className="text-sm font-bold text-slate-700 leading-relaxed">Li e aceito os termos de uso e responsabilidade.</span>
+          </label>
+          <button className={`${btnPrimary} mt-5`} onClick={activateAccess}>ATIVAR ACESSO</button>
+          <button className={`${btnSecondary} mt-3`} onClick={() => openTerms("register")}>LER TERMOS</button>
+        </div>
+      </div>
+    </Shell>
+  );
   if (screen === "home") return <Shell><Topbar small="Atestado Fácil" title={user?.nome?.split(" ")[0] || "Usuário"} showReset onReset={resetAccess} /><div className="p-5 pt-0"><div className="bg-gradient-to-br from-blue-700 to-blue-950 text-white rounded-3xl p-6 shadow-lg mb-4"><span className="inline-block bg-green-300 text-green-950 px-3 py-1 rounded-full text-sm font-black mb-4">Acesso ativo</span><h1 className="text-3xl font-black leading-tight">Olá, {user?.nome?.split(" ")[0]}!</h1><p className="text-blue-100 mt-3 text-lg leading-relaxed font-bold">Gere e envie seu formulário em poucos passos.</p></div><div className="grid grid-cols-2 gap-3 mb-4"><div className="bg-white rounded-2xl border-4 border-blue-100 p-4 text-center"><strong className="block text-2xl text-blue-700">Ativo</strong><span className="text-sm font-black text-slate-500">Status</span></div><div className="bg-white rounded-2xl border-4 border-blue-100 p-4 text-center"><strong className="block text-2xl text-blue-700">{sentCount}</strong><span className="text-sm font-black text-slate-500">Envios</span></div></div><div className="bg-white rounded-3xl border-4 border-blue-100 p-5 shadow-sm mb-4 flex items-center gap-4"><div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center text-2xl">📄</div><div><b className="text-xl font-black">Novo formulário</b><p className="text-sm text-slate-500 font-bold leading-relaxed">Informe o atestado, anexe os documentos e confira antes de enviar.</p></div></div><button className={btnPrimary} onClick={() => go("data")}>COMEÇAR ENVIO</button></div></Shell>;
   if (screen === "data") return <Shell><Topbar small="Passo 1 de 4" title="Atestado" backTo="home" onBack={go} /><div className="p-5 pt-0 flex flex-col gap-5"><div className="bg-white p-6 rounded-2xl border-4 border-slate-200 shadow-sm overflow-hidden"><label className="block text-2xl font-bold text-slate-800 mb-4">Data de início:</label><div className="relative w-full h-20 border-4 border-blue-400 rounded-2xl bg-blue-50 overflow-hidden flex items-center justify-center px-2"><span className="text-2xl font-extrabold text-slate-900 leading-none text-center pointer-events-none whitespace-nowrap">{formatDataLongBR(date)}</span><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" aria-label="Data de início do atestado" /></div></div><div className="bg-white p-6 rounded-2xl border-4 border-slate-200 shadow-sm flex flex-col gap-4"><label className="block text-2xl font-bold text-slate-800 mb-2">Tipo:</label>{[{ id: "01_03", label: "De 01 a 03 dias" }, { id: "04_15", label: "De 04 a 15 dias" }, { id: "acima_15", label: "Acima de 15 dias" }, { id: "acompanhamento", label: "Acompanhamento" }].map((opt) => <label key={opt.id} className={`flex items-center gap-4 p-4 border-4 rounded-xl cursor-pointer transition-colors ${leaveType === opt.id ? "border-blue-600 bg-blue-50" : "border-slate-300"}`}><input type="radio" name="dias" className="w-8 h-8 text-blue-600" checked={leaveType === opt.id} onChange={() => { setLeaveType(opt.id); setShift(""); }} /><span className="text-2xl font-bold">{opt.label}</span></label>)}</div>{leaveType !== "01_03" && <div className="bg-white p-6 rounded-2xl border-4 border-slate-200 shadow-sm flex flex-col gap-4"><label className="block text-2xl font-bold text-slate-800 mb-2">Turno:</label><div className="flex gap-4"><label className={`flex-1 flex items-center justify-center gap-2 p-4 border-4 rounded-xl cursor-pointer ${shift === "manha" ? "border-blue-600 bg-blue-50" : "border-slate-300"}`}><input type="radio" name="turno" className="w-6 h-6" checked={shift === "manha"} onChange={() => setShift("manha")} /><span className="text-xl font-bold">Manhã</span></label><label className={`flex-1 flex items-center justify-center gap-2 p-4 border-4 rounded-xl cursor-pointer ${shift === "tarde" ? "border-blue-600 bg-blue-50" : "border-slate-300"}`}><input type="radio" name="turno" className="w-6 h-6" checked={shift === "tarde"} onChange={() => setShift("tarde")} /><span className="text-xl font-bold">Tarde</span></label></div></div>}{leaveType === "acompanhamento" && <div className="bg-indigo-50 p-6 rounded-2xl border-4 border-indigo-200 shadow-sm flex flex-col gap-4"><label className="block text-xl font-bold text-indigo-900 mb-2">Detalhes do acompanhamento:</label><label className={`flex items-center gap-4 p-3 border-2 rounded-lg cursor-pointer bg-white ${acompType === "01_03" ? "border-indigo-600" : "border-slate-300"}`}><input type="radio" name="acompType" className="w-6 h-6" checked={acompType === "01_03"} onChange={() => setAcompType("01_03")} /><span className="text-lg font-bold text-slate-700">De 01 a 03 dias</span></label><label className={`flex items-center gap-4 p-3 border-2 rounded-lg cursor-pointer bg-white ${acompType === "acima_04" ? "border-indigo-600" : "border-slate-300"}`}><input type="radio" name="acompType" className="w-6 h-6" checked={acompType === "acima_04"} onChange={() => setAcompType("acima_04")} /><span className="text-lg font-bold text-slate-700">Acima de 04 dias</span></label><label className="block text-lg font-bold text-indigo-900 mt-2">Grau de parentesco:</label><input type="text" placeholder="Ex: Filho, Mãe, Cônjuge..." value={kinship} onChange={(e) => setKinship(e.target.value)} className="w-full text-xl p-3 border-2 border-indigo-300 rounded-lg focus:outline-none focus:border-indigo-600 font-bold" /></div>}<button className={btnSuccess} onClick={() => { if (leaveType !== "01_03" && !shift) { alert("Por favor, selecione o turno."); return; } if (leaveType === "acompanhamento" && !kinship.trim()) { alert("Por favor, informe o grau de parentesco."); return; } go("docs"); }}>AVANÇAR</button></div></Shell>;
   if (screen === "docs") return <Shell><Topbar small="Passo 2 de 4" title="Documentos" backTo="data" onBack={go} /><div className="p-5 pt-0 flex flex-col gap-5"><div className="bg-white p-4 rounded-2xl border-4 border-slate-200"><h2 className="text-2xl font-bold text-slate-800 mb-2 text-center">ATESTADO</h2><label className={`cursor-pointer ${atestadoDoc ? btnSecondary + " border-green-500" : btnPrimary}`}>{atestadoDoc ? <><IconCheck /><span className="text-green-700">Atestado anexado!</span><span className="text-lg text-slate-500 underline mt-2">Trocar</span></> : <><IconCamera />ANEXAR ATESTADO</>}<input type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => handleFileRead(e, setAtestadoDoc)} /></label></div><div className="bg-white p-4 rounded-2xl border-4 border-slate-200"><h2 className="text-2xl font-bold text-slate-800 mb-2 text-center">IDENTIDADE</h2><label className={`cursor-pointer ${identidadeDoc ? btnSecondary + " border-green-500" : btnSecondary}`}>{identidadeDoc ? <><IconCheck /><span className="text-green-700 text-xl">Identidade salva!</span><span className="text-lg text-slate-500 underline mt-2">Trocar</span></> : <><IconCamera />SALVAR IDENTIDADE</>}<input type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => handleFileRead(e, setIdentidadeDoc, true)} /></label>{identidadeDoc && <button onClick={removeSavedId} className="w-full mt-4 p-4 flex items-center justify-center gap-2 text-red-700 font-bold text-xl border-2 border-red-200 rounded-lg bg-red-50"><IconTrash /> Apagar identidade</button>}</div><button className={`${atestadoDoc ? btnSuccess : btnBase + " bg-slate-300 text-slate-500 cursor-not-allowed border-slate-400"}`} onClick={() => { if (!atestadoDoc) return; if (!identidadeDoc) { alert("Antes de continuar, salve a identidade."); return; } go("preview"); }} disabled={!atestadoDoc}>{atestadoDoc ? "AVANÇAR" : "FALTA O ATESTADO"}</button></div></Shell>;
