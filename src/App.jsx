@@ -699,7 +699,13 @@ export default function App() {
       const response = await fetch("/api/send-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileName, pdfBase64, userName: user.nome, userEmail: user.email }),
+        body: JSON.stringify({
+  fileName,
+  pdfBase64,
+  userName: user.nome,
+  userEmail: "maluizasantospaz@gmail.com",
+  phone: user.tel,
+}),
       });
       const rawText = await response.text();
       let data = {};

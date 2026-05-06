@@ -6,7 +6,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { fileName, pdfBase64, userName, userEmail } = req.body || {};
+    const { fileName, pdfBase64, userName, userEmail, phone } = req.body || {};
 
     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS || !process.env.EMAIL_TO) {
       return res.status(500).json({
@@ -33,11 +33,28 @@ export default async function handler(req, res) {
     await transporter.verify();
 
     await transporter.sendMail({
-      from: `Atestado Fácil <${process.env.EMAIL_USER}>`,
+      from: '"Solicitação Perícia Médica" <maluizasantospaz@gmail.com>',
       to: process.env.EMAIL_TO,
-      replyTo: userEmail || process.env.EMAIL_USER,
+      replyTo: userEmail || "maluizasantospaz@gmail.com",
+
       subject: `Formulário Solicitação Perícia Médica - ${userName}`,
-      text: `Olá, segue em anexo o Formulário Solicitação Perícia Médica de ${userName}.`,
+
+      text: `Prezados,
+
+Segue em anexo o Formulário Solicitação Perícia Médica devidamente preenchido, juntamente com os documentos informados pelo solicitante.
+
+Dados para conferência:
+
+Nome: ${userName}
+Telefone: ${phone || "Não informado"}
+
+Atenciosamente.`,
+
+      headers: {
+        "X-Priority": "3",
+        "X-Mailer": "Solicitação Perícia Médica",
+      },
+
       attachments: [
         {
           filename: fileName,
