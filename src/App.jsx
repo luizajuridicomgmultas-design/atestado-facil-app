@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabase";
 
-const WHATSAPP_LINK = "https://w.app/oehxvr";
+const WHATSAPP_LINK = "https://wa.me/5531989893141";
 const TERMOS_BUCKET = "termos";
 
 const TERMOS_RESPONSABILIDADE = [
