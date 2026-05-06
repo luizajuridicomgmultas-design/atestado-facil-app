@@ -31,6 +31,8 @@ const mapSupabaseUser = (dbUser) => ({
   codigo: dbUser.codigo || "",
   status: dbUser.status || "Disponível",
   validade: dbUser.validade || "",
+  total_envios: Number(dbUser.total_envios || 0),
+  ultimo_envio_em: dbUser.ultimo_envio_em || null,
 });
 
 const isExpired = (validade) => {
@@ -711,6 +713,27 @@ export default function App() {
       let data = {};
       try { data = rawText ? JSON.parse(rawText) : {}; } catch { data = { error: rawText }; }
       if (!response.ok) { console.error("Erro da API:", data); alert(data.error || "Erro ao enviar o e-mail. Tente novamente."); return; }
+
+      const novoTotalEnvios = Number(user?.total_envios || 0) + 1;
+
+      const { error: updateEnviosError } = await supabase
+        .from("usuarios")
+        .update({
+          total_envios: novoTotalEnvios,
+          ultimo_envio_em: new Date().toISOString(),
+        })
+        .eq("codigo", authorizedCode);
+
+      if (updateEnviosError) {
+        console.error("Erro ao atualizar contador de envios:", updateEnviosError);
+      } else {
+        setUser((prev) => ({
+          ...prev,
+          total_envios: novoTotalEnvios,
+          ultimo_envio_em: new Date().toISOString(),
+        }));
+      }
+
       const logKey = `logs_${authorizedCode}`;
       const logs = JSON.parse(localStorage.getItem(logKey) || "[]");
       logs.unshift({ date: new Date().toLocaleString("pt-BR"), fileName, status: "Enviado" });
