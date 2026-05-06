@@ -623,7 +623,7 @@ export default function App() {
 
       page.drawText(t, {
   x: x + 3,
-  y: y - 2,
+  y: y + 2,
   size: s,
   font: f,
   color: black,
