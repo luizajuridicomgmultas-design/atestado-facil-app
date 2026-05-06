@@ -621,7 +621,13 @@ export default function App() {
 
       while (f.widthOfTextAtSize(t, s) > maxW && s > 7.8) s -= 0.15;
 
-      page.drawText(t, { x, y: y - yOffset, size: s, font: f, color: black });
+      page.drawText(t, {
+  x: x + 1.5,
+  y: y - 0.5,
+  size: s,
+  font: f,
+  color: black,
+});
     };
     const markX = (x, y) => page.drawText("X", { x: x + 1, y: y + 1, size: 9, font: bold, color: black });
     draw(user.nome, 112, 711, { maxW: 305 });
