@@ -2,6 +2,18 @@ import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabase";
 
 const WHATSAPP_LINK = "https://w.app/oehxvr";
+const TERMOS_BUCKET = "termos";
+
+const TERMOS_RESPONSABILIDADE = [
+  ["Ferramenta independente", "este app não possui vínculo oficial com Prefeitura, Secretaria ou órgão público."],
+  ["Finalidade", "o sistema auxilia no preenchimento, organização e envio dos documentos informados."],
+  ["Dados", "o usuário declara que as informações e documentos enviados são verdadeiros e de sua responsabilidade."],
+  ["Dependência externa", "o funcionamento pode depender de formulário, e-mail ou plataforma de terceiros."],
+  ["Alterações externas", "se o formulário oficial mudar, o app poderá ficar temporariamente indisponível até atualização."],
+  ["Acesso individual", "o código é pessoal e vinculado aos dados cadastrados."],
+  ["PWA", "remover o app, limpar dados ou trocar de aparelho pode exigir nova liberação."],
+  ["Resultado", "o app não garante deferimento, prazo de resposta ou aceitação pelo órgão destinatário."],
+];
 
 const mapSupabaseUser = (dbUser) => ({
   id: dbUser.id,
@@ -350,6 +362,15 @@ export default function App() {
       validade: validadeAutomatica,
     };
 
+    let termosPdfUrl = "";
+    try {
+      termosPdfUrl = await salvarPdfTermosNoSupabase(finalUser, usadoEm);
+    } catch (pdfError) {
+      console.error(pdfError);
+      alert("Não foi possível gerar o PDF dos termos. Confira se o bucket 'termos' existe no Supabase.");
+      return;
+    }
+
     const { error } = await supabase
       .from("usuarios")
       .update({
@@ -367,6 +388,9 @@ export default function App() {
         status: "Ativo",
         validade: validadeAutomatica,
         usado_em: usadoEm,
+        termos_aceitos: true,
+        termos_aceitos_em: usadoEm,
+        termos_pdf: termosPdfUrl,
       })
       .eq("codigo", authorizedCode);
 
@@ -434,6 +458,102 @@ export default function App() {
       }
     }, 100);
   });
+
+  const gerarPdfTermosResponsabilidade = async (usuarioFinal, dataAceiteISO) => {
+    const pdfLib = await waitForPDFLib();
+    const { PDFDocument, StandardFonts, rgb } = pdfLib;
+    const pdfDoc = await PDFDocument.create();
+    const page = pdfDoc.addPage([595.25, 842]);
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const black = rgb(0, 0, 0);
+    const blue = rgb(0.08, 0.22, 0.48);
+    const gray = rgb(0.35, 0.39, 0.45);
+
+    const drawWrapped = (text, x, y, maxWidth, size = 10.5, lineHeight = 15, usedFont = font) => {
+      const words = String(text || "").split(/\s+/).filter(Boolean);
+      const lines = [];
+      let line = "";
+
+      words.forEach((word) => {
+        const testLine = line ? `${line} ${word}` : word;
+        if (usedFont.widthOfTextAtSize(testLine, size) <= maxWidth) {
+          line = testLine;
+        } else {
+          if (line) lines.push(line);
+          line = word;
+        }
+      });
+      if (line) lines.push(line);
+
+      lines.forEach((lineText, index) => {
+        page.drawText(lineText, { x, y: y - index * lineHeight, size, font: usedFont, color: black });
+      });
+
+      return y - lines.length * lineHeight;
+    };
+
+    const dataAceite = new Date(dataAceiteISO).toLocaleString("pt-BR");
+
+    page.drawText("Atestado Fácil", { x: 45, y: 790, size: 13, font: bold, color: blue });
+    page.drawText("TERMO DE RESPONSABILIDADE E CIÊNCIA", { x: 45, y: 755, size: 18, font: bold, color: black });
+    page.drawText("Aceite realizado eletronicamente pelo usuário no primeiro acesso ao aplicativo.", { x: 45, y: 733, size: 10.5, font, color: gray });
+
+    page.drawLine({ start: { x: 45, y: 715 }, end: { x: 550, y: 715 }, thickness: 1, color: rgb(0.85, 0.88, 0.92) });
+
+    let y = 685;
+    const info = [
+      ["Nome", usuarioFinal.nome],
+      ["CPF", usuarioFinal.cpf],
+      ["E-mail", usuarioFinal.email],
+      ["Telefone", usuarioFinal.tel],
+      ["Código de acesso", usuarioFinal.codigo],
+      ["Data e hora do aceite", dataAceite],
+    ];
+
+    info.forEach(([label, value]) => {
+      page.drawText(`${label}:`, { x: 45, y, size: 10.5, font: bold, color: black });
+      page.drawText(String(value || "—"), { x: 160, y, size: 10.5, font, color: black });
+      y -= 18;
+    });
+
+    y -= 12;
+    page.drawText("Declaração", { x: 45, y, size: 13, font: bold, color: blue });
+    y -= 24;
+    y = drawWrapped("Ao marcar a caixa de aceite no aplicativo, o usuário declara que leu, compreendeu e concorda com os termos abaixo:", 45, y, 500, 10.5, 15, font);
+    y -= 12;
+
+    TERMOS_RESPONSABILIDADE.forEach(([titulo, texto], index) => {
+      page.drawText(`${index + 1}. ${titulo}:`, { x: 45, y, size: 10.5, font: bold, color: black });
+      y = drawWrapped(texto, 65, y - 16, 470, 10.5, 15, font);
+      y -= 8;
+    });
+
+    page.drawLine({ start: { x: 45, y: 105 }, end: { x: 550, y: 105 }, thickness: 1, color: rgb(0.85, 0.88, 0.92) });
+    page.drawText("Registro gerado automaticamente pelo Atestado Fácil.", { x: 45, y: 82, size: 9, font, color: gray });
+    page.drawText("Este documento comprova o aceite eletrônico dos termos de responsabilidade.", { x: 45, y: 68, size: 9, font, color: gray });
+
+    const bytes = await pdfDoc.save({ useObjectStreams: true });
+    return new Blob([bytes], { type: "application/pdf" });
+  };
+
+  const salvarPdfTermosNoSupabase = async (usuarioFinal, dataAceiteISO) => {
+    const pdfBlob = await gerarPdfTermosResponsabilidade(usuarioFinal, dataAceiteISO);
+    const safeCode = onlyDigits(usuarioFinal.codigo) || String(usuarioFinal.codigo || "codigo").replace(/[^a-z0-9_-]/gi, "");
+    const fileName = `termo-${safeCode}-${Date.now()}.pdf`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(TERMOS_BUCKET)
+      .upload(fileName, pdfBlob, {
+        contentType: "application/pdf",
+        upsert: true,
+      });
+
+    if (uploadError) throw uploadError;
+
+    const { data } = supabase.storage.from(TERMOS_BUCKET).getPublicUrl(fileName);
+    return data.publicUrl;
+  };
 
   const dataUrlToUint8Array = (dataUrl) => {
     const base64 = dataUrl.split(",")[1];
