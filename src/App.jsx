@@ -608,13 +608,33 @@ export default function App() {
     const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     const black = rgb(0, 0, 0);
     const d = splitData(date);
+    // Ajuste fino dos campos preenchidos no formulário oficial.
+    // O PDF usa coordenadas em que diminuir o Y desce o texto.
+    // Esse offset dá "respiro" para todos os campos gerados pelo app.
     const draw = (text, x, y, opts = {}) => {
       if (!text) return;
-      const { f = font, size = 11, maxW = 200 } = opts;
+
+      const {
+        f = font,
+        size = 9,
+        maxW = 200,
+        yOffset = 1.8,
+      } = opts;
+
       let s = size;
       const t = String(text);
-      while (f.widthOfTextAtSize(t, s) > maxW && s > 6) s -= 0.2;
-      page.drawText(t, { x, y, size: s, font: f, color: black });
+
+      while (f.widthOfTextAtSize(t, s) > maxW && s > 6) {
+        s -= 0.2;
+      }
+
+      page.drawText(t, {
+        x,
+        y: y - yOffset,
+        size: s,
+        font: f,
+        color: black,
+      });
     };
     const markX = (x, y) => page.drawText("X", { x: x + 1, y: y + 1, size: 9, font: bold, color: black });
     draw(user.nome, 112, 711, { maxW: 305 });
