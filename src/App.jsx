@@ -622,8 +622,8 @@ export default function App() {
       while (f.widthOfTextAtSize(t, s) > maxW && s > 7.8) s -= 0.15;
 
       page.drawText(t, {
-  x: x + 1.5,
-  y: y - 0.5,
+  x: x + 3,
+  y: y - 0.9,
   size: s,
   font: f,
   color: black,
