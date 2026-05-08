@@ -814,15 +814,22 @@ export default function App() {
 Data de início:
 </label>
 
-<input
-type="date"
-value={date}
-onChange={(e) => setDate(e.target.value)}
-className="w-full p-5 rounded-2xl border-4 border-blue-400 bg-blue-50 text-2xl font-extrabold text-slate-900 outline-none focus:border-blue-700"
-/>
+<div className="relative w-full overflow-hidden rounded-2xl border-4 border-blue-400 bg-blue-50 focus-within:border-blue-700">
+  <div className="px-4 py-5 text-center text-xl font-extrabold text-slate-900 leading-tight">
+    {formatDataLongBR(date)}
+  </div>
+  <input
+    type="date"
+    value={date}
+    onChange={(e) => setDate(e.target.value)}
+    aria-label="Selecionar data de início"
+    className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+    style={{ WebkitAppearance: "none", appearance: "none" }}
+  />
+</div>
 
-<p className="mt-3 text-center text-lg font-black text-blue-800">
-{formatDataLongBR(date)}
+<p className="mt-3 text-center text-sm font-black text-blue-800">
+Toque na data para alterar
 </p>
 
 <button
