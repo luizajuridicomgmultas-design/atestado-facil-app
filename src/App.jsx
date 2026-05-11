@@ -686,7 +686,7 @@ export default function App() {
       .from(TERMOS_BUCKET)
       .upload(fileName, pdfBlob, {
         contentType: "application/pdf",
-        upsert: true,
+        upsert: false,
       });
 
     if (uploadError) throw uploadError;
