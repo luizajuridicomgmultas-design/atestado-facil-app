@@ -4,15 +4,26 @@ import { supabase } from "./supabase";
 const WHATSAPP_LINK = "https://wa.me/5531996485011?text=Ol%C3%A1!%20Quero%20meu%20acesso%20ao%20app%20Atestado%20F%C3%A1cil.%20Como%20fa%C3%A7o%20para%20come%C3%A7ar%3F";
 const TERMOS_BUCKET = "termos";
 
+const TERMOS_VERSION = "v3.0";
+const PRAZO_RETENCAO_DIAS = 100;
+
 const TERMOS_RESPONSABILIDADE = [
-  ["Ferramenta independente", "este app não possui vínculo oficial com Prefeitura, Secretaria ou órgão público."],
-  ["Finalidade", "o sistema auxilia no preenchimento, organização e envio dos documentos informados."],
-  ["Dados", "o usuário declara que as informações e documentos enviados são verdadeiros e de sua responsabilidade."],
-  ["Dependência externa", "o funcionamento pode depender de formulário, e-mail ou plataforma de terceiros."],
-  ["Alterações externas", "se o formulário oficial mudar, o app poderá ficar temporariamente indisponível até atualização."],
-  ["Acesso individual", "o código é pessoal e vinculado aos dados cadastrados."],
-  ["PWA", "remover o app, limpar dados ou trocar de aparelho pode exigir nova liberação."],
-  ["Resultado", "o app não garante deferimento, prazo de resposta ou aceitação pelo órgão destinatário."],
+  ["Natureza Jurídica e Ausência de Vínculo", "O usuário declara estar ciente de que o aplicativo \"Atestado Fácil\" é uma ferramenta de software de natureza privada e independente, sem qualquer vínculo, convênio, autorização ou representação oficial com a Prefeitura de Contagem ou qualquer órgão da Administração Pública. O serviço limita-se à automação técnica do envio de e-mails, funcionando como mandatário tecnológico do usuário."],
+  ["Consentimento Específico para Tratamento de Dados Sensíveis", "O usuário consente de forma livre, informada e inequívoca que o Atestado Fácil realize o tratamento de seus dados pessoais sensíveis, incluindo informações de saúde contidas em atestados e documentos médicos, exclusivamente para a finalidade de organização e transmissão eletrônica ao destinatário indicado."],
+  ["Cláusula de Mandato Tecnológico", "Ao utilizar o sistema, o usuário autoriza o aplicativo a, em seu nome, realizar o upload e o disparo de mensagens eletrônicas contendo seus documentos para os endereços de e-mail da perícia médica oficial. O aplicativo atua como mero mensageiro tecnológico, sem ingerência sobre o conteúdo ou recebimento final pelo destinatário."],
+  ["Responsabilidade pela Veracidade", "O usuário é o único responsável pela autenticidade e veracidade dos documentos anexados. O Atestado Fácil não realiza auditoria, perícia ou validação da integridade dos documentos enviados."],
+  ["Proibição de Uso Indevido", "O envio de documentos falsos, adulterados ou fraudulentos poderá sujeitar o usuário às penalidades previstas na legislação brasileira, incluindo os artigos 297 a 304 do Código Penal."],
+  ["Obrigação de Meio", "O serviço contratado constitui obrigação de meio. O aplicativo garante exclusivamente o esforço tecnológico de transmissão dos dados, não garantindo deferimento de pedidos, leitura de e-mails pelo órgão público, estabilidade de servidores externos ou manutenção de prazos legais."],
+  ["Indisponibilidade de Serviços Externos", "Falhas em provedores de e-mail, internet, DNS, serviços de terceiros, plataformas externas ou sistemas públicos não caracterizam defeito do serviço prestado pelo aplicativo."],
+  ["Segurança e Proteção de Dados", "Os dados são armazenados em ambiente protegido, com autenticação, criptografia lógica, controle de acesso e tecnologias de segurança compatíveis, incluindo Row Level Security (RLS) e URLs temporárias de acesso."],
+  ["Retenção e Eliminação Automática de Dados", "Os documentos médicos e dados sensíveis serão armazenados pelo prazo máximo e improrrogável de 100 (cem) dias, contados da data do envio. Após este período, os arquivos poderão ser excluídos automaticamente e de forma irreversível pelo sistema."],
+  ["Responsabilidade de Backup do Usuário", "O aplicativo não funciona como serviço permanente de custódia documental. É responsabilidade exclusiva do usuário manter cópias próprias de seus documentos e comprovantes."],
+  ["Exclusão Antecipada", "O usuário poderá solicitar exclusão antecipada de seus dados através dos canais oficiais de suporte, respeitadas eventuais obrigações legais de retenção."],
+  ["Logs e Auditoria", "O sistema poderá registrar logs técnicos e operacionais, incluindo IP, data, horário, versão dos termos e histórico de aceite eletrônico, para fins de segurança, auditoria e prevenção a fraudes."],
+  ["Política de Cobrança", "O serviço é disponibilizado mediante assinatura trimestral, sendo o pagamento referente ao acesso à plataforma tecnológica de automação, independentemente do êxito administrativo perante o órgão público."],
+  ["Segurança e Fraude", "Contas com indícios de fraude, envio suspeito de documentos, automação abusiva ou uso indevido poderão ser suspensas preventiva ou definitivamente."],
+  ["Atualização dos Termos", "Os presentes termos poderão ser atualizados periodicamente, sendo responsabilidade do usuário consultar a versão vigente."],
+  ["Aceite Eletrônico", "Ao marcar a opção de aceite no aplicativo, o usuário declara ter lido, compreendido e concordado integralmente com os termos apresentados."],
 ];
 
 const mapSupabaseUser = (dbUser) => ({
@@ -127,6 +138,56 @@ const getFieldError = (field, value) => {
 
   return "";
 };
+const maskSensitiveEmail = (email) => {
+  const raw = String(email || "").trim();
+  const [name, domain] = raw.split("@");
+  if (!name || !domain) return raw || "—";
+  const visible = name.slice(0, Math.min(6, name.length));
+  return `${visible}****@${domain}`;
+};
+
+const maskSensitiveCPF = (cpf) => {
+  const digits = onlyDigits(cpf);
+  if (digits.length !== 11) return cpf || "—";
+  return `${digits.slice(0, 3)}.***.***-${digits.slice(-2)}`;
+};
+
+const maskSensitivePhone = (phone) => {
+  const digits = onlyDigits(phone);
+  if (digits.length < 10) return phone || "—";
+  const ddd = digits.slice(0, 2);
+  const first = digits.length === 11 ? digits[2] : "";
+  return `(${ddd}) ${first}****-${digits.slice(-4)}`;
+};
+
+const generateAcceptanceCode = (codigo) => {
+  const ano = new Date().getFullYear();
+  const safe = String(codigo || "00000").replace(/[^a-z0-9]/gi, "").toUpperCase() || "00000";
+  return `AF-${safe}-${ano}`;
+};
+
+const sha256Text = async (text) => {
+  try {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(text);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    return Array.from(new Uint8Array(hashBuffer)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  } catch (error) {
+    console.error("Erro ao gerar hash:", error);
+    return "hash-indisponivel";
+  }
+};
+
+const getClientIP = async () => {
+  try {
+    const response = await fetch("https://api64.ipify.org?format=json", { cache: "no-store" });
+    if (!response.ok) return "Não capturado";
+    const data = await response.json();
+    return data?.ip || "Não capturado";
+  } catch {
+    return "Não capturado";
+  }
+};
 
 
 const Shell = ({ children }) => (
@@ -194,6 +255,7 @@ export default function App() {
   const [draftUser, setDraftUser] = useState(emptyUser);
   const [user, setUser] = useState(null);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [acceptedSensitiveTerms, setAcceptedSensitiveTerms] = useState(false);
 
   const getTodayBR = () => {
     const d = new Date();
@@ -308,6 +370,7 @@ export default function App() {
       setDraftUser({ ...emptyUser, id: data.id, codigo: code, status: "Disponível" });
       setUser(null);
       setAcceptedTerms(false);
+      setAcceptedSensitiveTerms(false);
       go("register");
       return;
     }
@@ -318,6 +381,7 @@ export default function App() {
         setDraftUser({ ...emptyUser, ...supabaseUser, codigo: code, status: "Disponível" });
         setUser(null);
         setAcceptedTerms(false);
+        setAcceptedSensitiveTerms(false);
         go("register");
         return;
       }
@@ -328,6 +392,7 @@ export default function App() {
       setDraftUser(usuarioFinal);
       setUser(usuarioFinal);
       setAcceptedTerms(true);
+      setAcceptedSensitiveTerms(true);
       go("home");
       return;
     }
@@ -357,8 +422,8 @@ export default function App() {
       return;
     }
 
-    if (!acceptedTerms) {
-      alert("Você precisa aceitar os termos de uso e responsabilidade.");
+    if (!acceptedTerms || !acceptedSensitiveTerms) {
+      alert("Você precisa aceitar os termos e autorizar o tratamento dos dados sensíveis.");
       return;
     }
 
@@ -371,12 +436,34 @@ export default function App() {
       validade: validadeAutomatica,
     };
 
-    let termosPdfUrl = "";
+    const termosMeta = {
+      ip: await getClientIP(),
+      codigoAutenticacao: generateAcceptanceCode(authorizedCode),
+      versao: TERMOS_VERSION,
+      prazoRetencaoDias: PRAZO_RETENCAO_DIAS,
+    };
+
+    termosMeta.hash = await sha256Text(JSON.stringify({
+      usuario: {
+        nome: finalUser.nome,
+        cpf: finalUser.cpf,
+        email: finalUser.email,
+        telefone: finalUser.tel,
+        codigo: finalUser.codigo,
+      },
+      aceite: usadoEm,
+      ip: termosMeta.ip,
+      codigoAutenticacao: termosMeta.codigoAutenticacao,
+      versao: termosMeta.versao,
+      termos: TERMOS_RESPONSABILIDADE,
+    }));
+
+    let termosPdfPath = "";
     try {
-      termosPdfUrl = await salvarPdfTermosNoSupabase(finalUser, usadoEm);
+      termosPdfPath = await salvarPdfTermosNoSupabase(finalUser, usadoEm, termosMeta);
     } catch (pdfError) {
       console.error(pdfError);
-      alert("Não foi possível gerar o PDF dos termos. Confira se o bucket 'termos' existe no Supabase.");
+      alert(`Não foi possível salvar o PDF dos termos no Supabase. Erro: ${pdfError?.message || pdfError?.error_description || "verifique a policy de INSERT do bucket termos"}`);
       return;
     }
 
@@ -399,7 +486,7 @@ export default function App() {
         usado_em: usadoEm,
         termos_aceitos: true,
         termos_aceitos_em: usadoEm,
-        termos_pdf: termosPdfUrl,
+        termos_pdf: termosPdfPath,
       })
       .eq("codigo", authorizedCode);
 
@@ -426,6 +513,7 @@ export default function App() {
     setUser(null);
     setDraftUser(emptyUser);
     setAcceptedTerms(false);
+    setAcceptedSensitiveTerms(false);
     setIdentidadeDoc(null);
     setAtestadoDoc(null);
     go("welcome");
@@ -468,18 +556,36 @@ export default function App() {
     }, 100);
   });
 
-  const gerarPdfTermosResponsabilidade = async (usuarioFinal, dataAceiteISO) => {
+  const gerarPdfTermosResponsabilidade = async (usuarioFinal, dataAceiteISO, meta = {}) => {
     const pdfLib = await waitForPDFLib();
     const { PDFDocument, StandardFonts, rgb } = pdfLib;
     const pdfDoc = await PDFDocument.create();
-    const page = pdfDoc.addPage([595.25, 842]);
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     const black = rgb(0, 0, 0);
     const blue = rgb(0.08, 0.22, 0.48);
     const gray = rgb(0.35, 0.39, 0.45);
+    const light = rgb(0.88, 0.91, 0.95);
 
-    const drawWrapped = (text, x, y, maxWidth, size = 10.5, lineHeight = 15, usedFont = font) => {
+    const dataAceite = new Date(dataAceiteISO).toLocaleString("pt-BR");
+    const metaFinal = {
+      ip: meta.ip || "Não capturado",
+      codigoAutenticacao: meta.codigoAutenticacao || generateAcceptanceCode(usuarioFinal.codigo),
+      versao: meta.versao || TERMOS_VERSION,
+      prazoRetencaoDias: meta.prazoRetencaoDias || PRAZO_RETENCAO_DIAS,
+      hash: meta.hash || "hash-indisponivel",
+    };
+
+    const createPage = () => {
+      const page = pdfDoc.addPage([595.25, 842]);
+      page.drawText("Atestado Fácil", { x: 45, y: 795, size: 13, font: bold, color: blue });
+      page.drawText("TERMO DE MANDATO TECNOLÓGICO, CONSENTIMENTO PARA TRATAMENTO DE DADOS", { x: 45, y: 762, size: 13, font: bold, color: black });
+      page.drawText("SENSÍVEIS E RESPONSABILIDADE CIVIL", { x: 45, y: 744, size: 13, font: bold, color: black });
+      page.drawLine({ start: { x: 45, y: 725 }, end: { x: 550, y: 725 }, thickness: 1, color: light });
+      return page;
+    };
+
+    const drawWrapped = (page, text, x, y, maxWidth, size = 10.2, lineHeight = 14.2, usedFont = font, color = black) => {
       const words = String(text || "").split(/\s+/).filter(Boolean);
       const lines = [];
       let line = "";
@@ -496,58 +602,83 @@ export default function App() {
       if (line) lines.push(line);
 
       lines.forEach((lineText, index) => {
-        page.drawText(lineText, { x, y: y - index * lineHeight, size, font: usedFont, color: black });
+        page.drawText(lineText, { x, y: y - index * lineHeight, size, font: usedFont, color });
       });
 
       return y - lines.length * lineHeight;
     };
 
-    const dataAceite = new Date(dataAceiteISO).toLocaleString("pt-BR");
+    const drawInfo = (page, label, value, y) => {
+      page.drawText(`${label}:`, { x: 45, y, size: 10.3, font: bold, color: black });
+      page.drawText(String(value || "—"), { x: 170, y, size: 10.3, font, color: black });
+      return y - 18;
+    };
 
-    page.drawText("Atestado Fácil", { x: 45, y: 790, size: 13, font: bold, color: blue });
-    page.drawText("TERMO DE RESPONSABILIDADE E CIÊNCIA", { x: 45, y: 755, size: 18, font: bold, color: black });
-    page.drawText("Aceite realizado eletronicamente pelo usuário no primeiro acesso ao aplicativo.", { x: 45, y: 733, size: 10.5, font, color: gray });
+    const drawFooter = (page, pageNumber) => {
+      page.drawLine({ start: { x: 45, y: 70 }, end: { x: 550, y: 70 }, thickness: 1, color: light });
+      page.drawText("Documento gerado automaticamente pelo sistema.", { x: 45, y: 49, size: 8.8, font, color: gray });
+      page.drawText(`Página ${pageNumber} de 3`, { x: 495, y: 49, size: 8.8, font, color: gray });
+    };
 
-    page.drawLine({ start: { x: 45, y: 715 }, end: { x: 550, y: 715 }, thickness: 1, color: rgb(0.85, 0.88, 0.92) });
+    const pages = [createPage(), createPage(), createPage()];
+    pages.forEach((page, index) => drawFooter(page, index + 1));
 
-    let y = 685;
-    const info = [
-      ["Nome", usuarioFinal.nome],
-      ["CPF", usuarioFinal.cpf],
-      ["E-mail", usuarioFinal.email],
-      ["Telefone", usuarioFinal.tel],
-      ["Código de acesso", usuarioFinal.codigo],
-      ["Data e hora do aceite", dataAceite],
-    ];
+    let page = pages[0];
+    let y = 700;
+    y = drawInfo(page, "Nome", usuarioFinal.nome, y);
+    y = drawInfo(page, "CPF", maskSensitiveCPF(usuarioFinal.cpf), y);
+    y = drawInfo(page, "E-mail", maskSensitiveEmail(usuarioFinal.email), y);
+    y = drawInfo(page, "Telefone", maskSensitivePhone(usuarioFinal.tel), y);
+    y = drawInfo(page, "IP de acesso", metaFinal.ip, y);
+    y = drawInfo(page, "Código de autenticação", metaFinal.codigoAutenticacao, y);
+    y = drawInfo(page, "Timestamp", dataAceite, y);
+    y -= 10;
 
-    info.forEach(([label, value]) => {
-      page.drawText(`${label}:`, { x: 45, y, size: 10.5, font: bold, color: black });
-      page.drawText(String(value || "—"), { x: 160, y, size: 10.5, font, color: black });
-      y -= 18;
+    const drawClause = (targetPage, clauseNumber, title, text, startY) => {
+      let cy = startY;
+      targetPage.drawText(`${clauseNumber}. ${title}`, { x: 45, y: cy, size: 11.2, font: bold, color: black });
+      cy -= 18;
+      cy = drawWrapped(targetPage, text, 45, cy, 500, 10.2, 14.5, font, black);
+      return cy - 14;
+    };
+
+    // Página 1: identificação e cláusulas principais.
+    TERMOS_RESPONSABILIDADE.slice(0, 3).forEach(([titulo, texto], index) => {
+      y = drawClause(page, index + 1, titulo, texto, y);
     });
 
-    y -= 12;
-    page.drawText("Declaração", { x: 45, y, size: 13, font: bold, color: blue });
-    y -= 24;
-    y = drawWrapped("Ao marcar a caixa de aceite no aplicativo, o usuário declara que leu, compreendeu e concorda com os termos abaixo:", 45, y, 500, 10.5, 15, font);
-    y -= 12;
-
-    TERMOS_RESPONSABILIDADE.forEach(([titulo, texto], index) => {
-      page.drawText(`${index + 1}. ${titulo}:`, { x: 45, y, size: 10.5, font: bold, color: black });
-      y = drawWrapped(texto, 65, y - 16, 470, 10.5, 15, font);
-      y -= 8;
+    // Página 2: responsabilidade, segurança e retenção.
+    page = pages[1];
+    y = 700;
+    TERMOS_RESPONSABILIDADE.slice(3, 11).forEach(([titulo, texto], index) => {
+      y = drawClause(page, index + 4, titulo, texto, y);
     });
 
-    page.drawLine({ start: { x: 45, y: 105 }, end: { x: 550, y: 105 }, thickness: 1, color: rgb(0.85, 0.88, 0.92) });
-    page.drawText("Registro gerado automaticamente pelo Atestado Fácil.", { x: 45, y: 82, size: 9, font, color: gray });
-    page.drawText("Este documento comprova o aceite eletrônico dos termos de responsabilidade.", { x: 45, y: 68, size: 9, font, color: gray });
+    // Página 3: auditoria, cobrança, fraude e aceite.
+    page = pages[2];
+    y = 700;
+    TERMOS_RESPONSABILIDADE.slice(11).forEach(([titulo, texto], index) => {
+      y = drawClause(page, index + 12, titulo, texto, y);
+    });
+
+    y -= 6;
+    page.drawText("Atestado Fácil", { x: 45, y, size: 11, font: bold, color: blue });
+    y -= 18;
+    page.drawText(`Versão dos Termos: ${metaFinal.versao}`, { x: 45, y, size: 9.5, font, color: black });
+    y -= 15;
+    page.drawText(`Prazo de retenção: ${metaFinal.prazoRetencaoDias} dias`, { x: 45, y, size: 9.5, font, color: black });
+    y -= 15;
+    page.drawText("Hash SHA-256:", { x: 45, y, size: 9.5, font: bold, color: black });
+    y = drawWrapped(page, metaFinal.hash, 120, y, 420, 8.3, 11.5, font, black);
+    y -= 12;
+    page.drawText("Contato: suporte@seudominio.com", { x: 45, y, size: 9.5, font, color: black });
 
     const bytes = await pdfDoc.save({ useObjectStreams: true });
     return new Blob([bytes], { type: "application/pdf" });
   };
 
-  const salvarPdfTermosNoSupabase = async (usuarioFinal, dataAceiteISO) => {
-    const pdfBlob = await gerarPdfTermosResponsabilidade(usuarioFinal, dataAceiteISO);
+  const salvarPdfTermosNoSupabase = async (usuarioFinal, dataAceiteISO, meta = {}) => {
+    const pdfBlob = await gerarPdfTermosResponsabilidade(usuarioFinal, dataAceiteISO, meta);
     const safeCode = onlyDigits(usuarioFinal.codigo) || String(usuarioFinal.codigo || "codigo").replace(/[^a-z0-9_-]/gi, "");
     const fileName = `termo-${safeCode}-${Date.now()}.pdf`;
 
@@ -560,8 +691,9 @@ export default function App() {
 
     if (uploadError) throw uploadError;
 
-    const { data } = supabase.storage.from(TERMOS_BUCKET).getPublicUrl(fileName);
-    return data.publicUrl;
+    // Bucket privado: não geramos URL pública.
+    // Salve apenas o caminho do arquivo. Para visualizar depois, gere uma signed URL no backend/admin.
+    return fileName;
   };
 
   const dataUrlToUint8Array = (dataUrl) => {
@@ -760,7 +892,7 @@ export default function App() {
 
   if (screen === "welcome") return <Shell><Header badge="Bem-vindo" title="Atestado Fácil" subtitle="Preencha o Formulário Solicitação Perícia Médica de forma simples, com suporte e segurança." /><div className="p-5"><div className="bg-white rounded-3xl border-4 border-blue-100 p-5 shadow-sm"><h2 className="text-2xl font-black text-slate-900 mb-2">Entrar no app</h2><p className="text-slate-600 font-bold leading-relaxed">Use seu código de acesso para continuar.</p><button className={`${btnPrimary} mt-5`} onClick={() => go("code")}>TENHO CÓDIGO</button><a className={`${btnSecondary} mt-3 no-underline`} href={WHATSAPP_LINK} target="_blank" rel="noreferrer">SOLICITAR ACESSO</a><button onClick={() => openTerms("welcome")} className="w-full text-center text-slate-500 font-black underline text-sm mt-4">Termos e responsabilidade</button></div><div className="bg-blue-50 text-blue-900 border-2 border-blue-200 rounded-2xl p-4 mt-4 text-sm font-bold leading-relaxed">Ferramenta independente, sem vínculo oficial com Prefeitura ou órgão público.</div></div></Shell>;
   if (screen === "code") return <Shell><Header badge="Código" title="Acesso liberado" subtitle="Digite o código informado pelo suporte." /><div className="p-5"><div className="bg-white rounded-3xl border-4 border-blue-100 p-5 shadow-sm"><h2 className="text-2xl font-black text-slate-900 mb-4">Código de acesso</h2><input value={accessCode} onChange={(e) => setAccessCode(e.target.value.toUpperCase())} placeholder="CÓDIGO" maxLength={12} className="w-full p-5 rounded-2xl border-4 border-slate-200 bg-slate-50 text-2xl font-black outline-none focus:border-blue-500 text-center tracking-[0.25em] uppercase" /><button className={`${btnPrimary} mt-5`} onClick={validateAccessCode}>CONTINUAR</button><button className={`${btnSecondary} mt-3`} onClick={() => go("welcome")}>VOLTAR</button></div></div></Shell>;
-  if (screen === "terms") return <Shell><Header badge="Termos" title="Responsabilidade" subtitle="Uso simples, transparente e independente." /><div className="p-5"><div className="bg-white rounded-3xl border-4 border-blue-100 p-5 shadow-sm"><h2 className="text-2xl font-black text-slate-900 mb-4">Antes de usar</h2><div className="max-h-[420px] overflow-auto bg-slate-50 border-4 border-dashed border-slate-200 rounded-2xl p-4 text-sm leading-relaxed text-slate-700 font-bold flex flex-col gap-3"><p><b>Ferramenta independente:</b> este app não possui vínculo oficial com Prefeitura, Secretaria ou órgão público.</p><p><b>Finalidade:</b> o sistema auxilia no preenchimento, organização e envio dos documentos informados.</p><p><b>Dados:</b> o usuário declara que as informações e documentos enviados são verdadeiros e de sua responsabilidade.</p><p><b>Dependência externa:</b> o funcionamento pode depender de formulário, e-mail ou plataforma de terceiros.</p><p><b>Alterações externas:</b> se o formulário oficial mudar, o app poderá ficar temporariamente indisponível até atualização.</p><p><b>Acesso individual:</b> o código é pessoal e vinculado aos dados cadastrados.</p><p><b>PWA:</b> remover o app, limpar dados ou trocar de aparelho pode exigir nova liberação.</p><p><b>Resultado:</b> o app não garante deferimento, prazo de resposta ou aceitação pelo órgão destinatário.</p></div><button className={`${btnPrimary} mt-5`} onClick={() => go(previousTermsScreen)}>ENTENDI</button></div></div></Shell>;
+  if (screen === "terms") return <Shell><Header badge="Termos" title="Responsabilidade" subtitle="Uso simples, transparente e independente." /><div className="p-5"><div className="bg-white rounded-3xl border-4 border-blue-100 p-5 shadow-sm"><h2 className="text-2xl font-black text-slate-900 mb-4">Antes de usar</h2><div className="max-h-[520px] overflow-auto bg-slate-50 border-4 border-dashed border-slate-200 rounded-2xl p-4 text-sm leading-relaxed text-slate-700 font-bold flex flex-col gap-3"><p><b>Termo:</b> Mandato Tecnológico, Consentimento para Tratamento de Dados Sensíveis e Responsabilidade Civil.</p><p><b>Versão dos Termos:</b> {TERMOS_VERSION}</p><p><b>Prazo de retenção:</b> {PRAZO_RETENCAO_DIAS} dias para documentos médicos e dados sensíveis, contados da data do envio.</p>{TERMOS_RESPONSABILIDADE.map(([titulo, texto], index) => <p key={titulo}><b>{index + 1}. {titulo}:</b> {texto}</p>)}</div><button className={`${btnPrimary} mt-5`} onClick={() => go(previousTermsScreen)}>ENTENDI</button></div></div></Shell>;
   if (screen === "register") return (
     <Shell>
       <Header badge="Primeiro acesso" title="Seus dados" subtitle="Preencha uma vez para gerar os próximos formulários." />
@@ -800,7 +932,11 @@ export default function App() {
           </label>
           <label className="flex items-start gap-3 bg-slate-100 rounded-2xl p-4 mt-5">
             <input type="checkbox" checked={acceptedTerms} onChange={(e) => setAcceptedTerms(e.target.checked)} className="w-7 h-7 mt-1" />
-            <span className="text-sm font-bold text-slate-700 leading-relaxed">Li e aceito os termos de uso e responsabilidade.</span>
+            <span className="text-sm font-bold text-slate-700 leading-relaxed">Li e aceito o Termo de Mandato Tecnológico e Responsabilidade Civil.</span>
+          </label>
+          <label className="flex items-start gap-3 bg-blue-50 rounded-2xl p-4 mt-3 border-2 border-blue-100">
+            <input type="checkbox" checked={acceptedSensitiveTerms} onChange={(e) => setAcceptedSensitiveTerms(e.target.checked)} className="w-7 h-7 mt-1" />
+            <span className="text-sm font-bold text-blue-900 leading-relaxed">Concordo com o tratamento dos meus dados pessoais sensíveis, incluindo informações de saúde presentes em atestados e documentos médicos, exclusivamente para organização e envio eletrônico.</span>
           </label>
           <button className={`${btnPrimary} mt-5`} onClick={activateAccess}>ATIVAR ACESSO</button>
           <button className={`${btnSecondary} mt-3`} onClick={() => openTerms("register")}>LER TERMOS</button>
@@ -840,7 +976,7 @@ className="w-full mt-4 p-4 rounded-2xl bg-slate-100 border-4 border-slate-200 te
 USAR DATA DE HOJE
 </button>
 </div><div className="bg-white p-6 rounded-2xl border-4 border-slate-200 shadow-sm flex flex-col gap-4"><label className="block text-2xl font-bold text-slate-800 mb-2">Tipo:</label>{[{ id: "01_03", label: "De 01 a 03 dias" }, { id: "04_15", label: "De 04 a 15 dias" }, { id: "acima_15", label: "Acima de 15 dias" }, { id: "acompanhamento", label: "Acompanhamento" }].map((opt) => <label key={opt.id} className={`flex items-center gap-4 p-4 border-4 rounded-xl cursor-pointer transition-colors ${leaveType === opt.id ? "border-blue-600 bg-blue-50" : "border-slate-300"}`}><input type="radio" name="dias" className="w-8 h-8 text-blue-600" checked={leaveType === opt.id} onChange={() => { setLeaveType(opt.id); setShift(""); }} /><span className="text-2xl font-bold">{opt.label}</span></label>)}</div>{leaveType !== "01_03" && <div className="bg-white p-6 rounded-2xl border-4 border-slate-200 shadow-sm flex flex-col gap-4"><label className="block text-2xl font-bold text-slate-800 mb-2">Turno:</label><div className="flex gap-4"><label className={`flex-1 flex items-center justify-center gap-2 p-4 border-4 rounded-xl cursor-pointer ${shift === "manha" ? "border-blue-600 bg-blue-50" : "border-slate-300"}`}><input type="radio" name="turno" className="w-6 h-6" checked={shift === "manha"} onChange={() => setShift("manha")} /><span className="text-xl font-bold">Manhã</span></label><label className={`flex-1 flex items-center justify-center gap-2 p-4 border-4 rounded-xl cursor-pointer ${shift === "tarde" ? "border-blue-600 bg-blue-50" : "border-slate-300"}`}><input type="radio" name="turno" className="w-6 h-6" checked={shift === "tarde"} onChange={() => setShift("tarde")} /><span className="text-xl font-bold">Tarde</span></label></div></div>}{leaveType === "acompanhamento" && <div className="bg-indigo-50 p-6 rounded-2xl border-4 border-indigo-200 shadow-sm flex flex-col gap-4"><label className="block text-xl font-bold text-indigo-900 mb-2">Detalhes do acompanhamento:</label><label className={`flex items-center gap-4 p-3 border-2 rounded-lg cursor-pointer bg-white ${acompType === "01_03" ? "border-indigo-600" : "border-slate-300"}`}><input type="radio" name="acompType" className="w-6 h-6" checked={acompType === "01_03"} onChange={() => setAcompType("01_03")} /><span className="text-lg font-bold text-slate-700">De 01 a 03 dias</span></label><label className={`flex items-center gap-4 p-3 border-2 rounded-lg cursor-pointer bg-white ${acompType === "acima_04" ? "border-indigo-600" : "border-slate-300"}`}><input type="radio" name="acompType" className="w-6 h-6" checked={acompType === "acima_04"} onChange={() => setAcompType("acima_04")} /><span className="text-lg font-bold text-slate-700">Acima de 04 dias</span></label><label className="block text-lg font-bold text-indigo-900 mt-2">Grau de parentesco:</label><input type="text" placeholder="Ex: Filho, Mãe, Cônjuge..." value={kinship} onChange={(e) => setKinship(e.target.value)} className="w-full text-xl p-3 border-2 border-indigo-300 rounded-lg focus:outline-none focus:border-indigo-600 font-bold" /></div>}<button className={btnSuccess} onClick={() => { if (leaveType !== "01_03" && !shift) { alert("Por favor, selecione o turno."); return; } if (leaveType === "acompanhamento" && !kinship.trim()) { alert("Por favor, informe o grau de parentesco."); return; } go("docs"); }}>AVANÇAR</button></div></Shell>;
-  if (screen === "docs") return <Shell><Topbar small="Passo 2 de 4" title="Documentos" backTo="data" onBack={go} /><div className="p-5 pt-0 flex flex-col gap-5"><div className="bg-white p-4 rounded-2xl border-4 border-slate-200"><h2 className="text-2xl font-bold text-slate-800 mb-2 text-center">ATESTADO</h2><label className={`cursor-pointer ${atestadoDoc ? btnSecondary + " border-green-500" : btnPrimary}`}>{atestadoDoc ? <><IconCheck /><span className="text-green-700">Atestado anexado!</span><span className="text-lg text-slate-500 underline mt-2">Trocar</span></> : <><IconCamera />ANEXAR ATESTADO</>}<input type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => handleFileRead(e, setAtestadoDoc)} /></label></div><div className="bg-white p-4 rounded-2xl border-4 border-slate-200"><h2 className="text-2xl font-bold text-slate-800 mb-2 text-center">IDENTIDADE</h2><label className={`cursor-pointer ${identidadeDoc ? btnSecondary + " border-green-500" : btnSecondary}`}>{identidadeDoc ? <><IconCheck /><span className="text-green-700 text-xl">Identidade salva!</span><span className="text-lg text-slate-500 underline mt-2">Trocar</span></> : <><IconCamera />SALVAR IDENTIDADE</>}<input type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => handleFileRead(e, setIdentidadeDoc, true)} /></label>{identidadeDoc && <button onClick={removeSavedId} className="w-full mt-4 p-4 flex items-center justify-center gap-2 text-red-700 font-bold text-xl border-2 border-red-200 rounded-lg bg-red-50"><IconTrash /> Apagar identidade</button>}</div><button className={`${atestadoDoc ? btnSuccess : btnBase + " bg-slate-300 text-slate-500 cursor-not-allowed border-slate-400"}`} onClick={() => { if (!atestadoDoc) return; if (!identidadeDoc) { alert("Antes de continuar, salve a identidade."); return; } go("preview"); }} disabled={!atestadoDoc}>{atestadoDoc ? "AVANÇAR" : "FALTA O ATESTADO"}</button></div></Shell>;
+  if (screen === "docs") return <Shell><Topbar small="Passo 2 de 4" title="Documentos" backTo="data" onBack={go} /><div className="p-5 pt-0 flex flex-col gap-5"><div className="bg-blue-50 text-blue-900 border-2 border-blue-200 rounded-2xl p-4 text-sm font-black leading-relaxed">Os documentos enviados pelo aplicativo poderão ser excluídos automaticamente após 100 dias. Guarde uma cópia própria dos seus documentos.</div><div className="bg-white p-4 rounded-2xl border-4 border-slate-200"><h2 className="text-2xl font-bold text-slate-800 mb-2 text-center">ATESTADO</h2><label className={`cursor-pointer ${atestadoDoc ? btnSecondary + " border-green-500" : btnPrimary}`}>{atestadoDoc ? <><IconCheck /><span className="text-green-700">Atestado anexado!</span><span className="text-lg text-slate-500 underline mt-2">Trocar</span></> : <><IconCamera />ANEXAR ATESTADO</>}<input type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => handleFileRead(e, setAtestadoDoc)} /></label></div><div className="bg-white p-4 rounded-2xl border-4 border-slate-200"><h2 className="text-2xl font-bold text-slate-800 mb-2 text-center">IDENTIDADE</h2><label className={`cursor-pointer ${identidadeDoc ? btnSecondary + " border-green-500" : btnSecondary}`}>{identidadeDoc ? <><IconCheck /><span className="text-green-700 text-xl">Identidade salva!</span><span className="text-lg text-slate-500 underline mt-2">Trocar</span></> : <><IconCamera />SALVAR IDENTIDADE</>}<input type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => handleFileRead(e, setIdentidadeDoc, true)} /></label>{identidadeDoc && <button onClick={removeSavedId} className="w-full mt-4 p-4 flex items-center justify-center gap-2 text-red-700 font-bold text-xl border-2 border-red-200 rounded-lg bg-red-50"><IconTrash /> Apagar identidade</button>}</div><button className={`${atestadoDoc ? btnSuccess : btnBase + " bg-slate-300 text-slate-500 cursor-not-allowed border-slate-400"}`} onClick={() => { if (!atestadoDoc) return; if (!identidadeDoc) { alert("Antes de continuar, salve a identidade."); return; } go("preview"); }} disabled={!atestadoDoc}>{atestadoDoc ? "AVANÇAR" : "FALTA O ATESTADO"}</button></div></Shell>;
   if (screen === "preview") { const typeLabel = { "01_03": "De 01 a 03 dias", "04_15": "De 04 a 15 dias", "acima_15": "Acima de 15 dias", acompanhamento: "Acompanhamento" }[leaveType]; return <Shell><Topbar small="Passo 3 de 4" title="Conferência" backTo="docs" onBack={go} /><div className="p-5 pt-0"><div className="bg-white rounded-3xl border-4 border-blue-100 p-5 shadow-sm"><h2 className="text-2xl font-black text-slate-900 mb-2">Confira os dados</h2><p className="text-slate-600 font-bold leading-relaxed">Veja se está tudo certo antes do envio.</p><div className="mt-5 overflow-hidden border-2 border-slate-900 rounded-xl text-left text-xs bg-white">{[["Nome", user?.nome, "CPF", user?.cpf], ["Cargo", user?.cargo, "Órgão", user?.orgao], ["Mat. 1º", user?.mat1, "Mat. 2º", user?.mat2 || "-"], ["Unid. 1º", user?.unid1, "Unid. 2º", user?.unid2 || "-"], ["Telefone", user?.tel, "E-mail", user?.email]].map(([a, b, c, d], index) => <div key={index} className="grid grid-cols-2 border-b-2 border-slate-900 last:border-b-0"><div className="p-2 border-r-2 border-slate-900 font-black">{a}: <span className="font-bold text-blue-700">{b}</span></div><div className="p-2 font-black">{c}: <span className="font-bold text-blue-700">{d}</span></div></div>)}<div className="p-2 font-black">Situação: <span className="font-bold text-blue-700">{user?.sit}</span></div></div><div className="bg-blue-50 text-blue-900 border-2 border-blue-200 rounded-2xl p-4 mt-4 text-sm font-bold leading-relaxed"><b>Tipo:</b> {typeLabel}<br /><b>Data:</b> {formatDataLongBR(date)}{shift && <><br /><b>Turno:</b> {shift}</>}{leaveType === "acompanhamento" && <><br /><b>Parentesco:</b> {kinship}</>}</div><button className={`${btnSuccess} mt-5`} onClick={() => go("confirm")}>ESTÁ CORRETO</button><button className={`${btnSecondary} mt-3`} onClick={requestEdit}>SOLICITAR ALTERAÇÃO CADASTRAL<span className="text-sm font-bold text-slate-500">Taxa administrativa R$5,00</span></button></div></div></Shell>; }
   if (screen === "confirm") return <Shell><Topbar small="Passo 4 de 4" title="Enviar" backTo="preview" onBack={go} /><div className="p-5 pt-0 text-center"><div className="bg-white rounded-3xl border-4 border-blue-100 p-6 shadow-sm"><div className="flex justify-center mb-3"><IconFile /></div><h2 className="text-3xl font-black text-slate-900">Tudo pronto!</h2><p className="text-xl text-slate-600 font-bold mt-3 leading-relaxed">O PDF será gerado com formulário, atestado e identidade.</p></div><button className={`${btnSuccess} mt-5 ${isGenerating ? "animate-pulse" : ""}`} onClick={generateAndSharePDF} disabled={isGenerating}>{isGenerating ? "GERANDO PDF..." : <><IconSend /> GERAR E ENVIAR</>}</button></div></Shell>;
   return <Shell><div className="p-5 min-h-screen flex flex-col gap-6 text-center items-center justify-center"><IconCheck /><h1 className="text-4xl font-extrabold text-green-700 leading-tight">Sucesso!</h1><p className="text-2xl text-slate-700 mt-4">O formulário foi enviado automaticamente.</p><button className={`${btnPrimary} mt-10`} onClick={() => { setAtestadoDoc(null); go("home"); }}>FAZER OUTRO</button></div></Shell>;
