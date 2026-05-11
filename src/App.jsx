@@ -585,33 +585,59 @@ export default function App() {
       return page;
     };
 
+    const splitLongWord = (word, maxWidth, size, usedFont) => {
+      const parts = [];
+      let current = "";
+
+      String(word || "").split("").forEach((char) => {
+        const test = current + char;
+        if (usedFont.widthOfTextAtSize(test, size) <= maxWidth || !current) {
+          current = test;
+        } else {
+          parts.push(current);
+          current = char;
+        }
+      });
+
+      if (current) parts.push(current);
+      return parts;
+    };
+
     const drawWrapped = (page, text, x, y, maxWidth, size = 10.2, lineHeight = 14.2, usedFont = font, color = black) => {
-      const words = String(text || "").split(/\s+/).filter(Boolean);
       const lines = [];
       let line = "";
 
-      words.forEach((word) => {
-        const testLine = line ? `${line} ${word}` : word;
-        if (usedFont.widthOfTextAtSize(testLine, size) <= maxWidth) {
-          line = testLine;
-        } else {
-          if (line) lines.push(line);
-          line = word;
-        }
-      });
+      String(text || "")
+        .split(/\s+/)
+        .filter(Boolean)
+        .forEach((word) => {
+          const pieces = usedFont.widthOfTextAtSize(word, size) > maxWidth
+            ? splitLongWord(word, maxWidth, size, usedFont)
+            : [word];
+
+          pieces.forEach((piece) => {
+            const testLine = line ? `${line} ${piece}` : piece;
+            if (usedFont.widthOfTextAtSize(testLine, size) <= maxWidth) {
+              line = testLine;
+            } else {
+              if (line) lines.push(line);
+              line = piece;
+            }
+          });
+        });
+
       if (line) lines.push(line);
 
       lines.forEach((lineText, index) => {
         page.drawText(lineText, { x, y: y - index * lineHeight, size, font: usedFont, color });
       });
 
-      return y - lines.length * lineHeight;
+      return y - Math.max(lines.length, 1) * lineHeight;
     };
 
     const drawInfo = (page, label, value, y) => {
-      page.drawText(`${label}:`, { x: 45, y, size: 10.3, font: bold, color: black });
-      page.drawText(String(value || "—"), { x: 170, y, size: 10.3, font, color: black });
-      return y - 18;
+      page.drawText(`${label}:`, { x: 45, y, size: 9.6, font: bold, color: black });
+      return drawWrapped(page, String(value || "—"), 168, y, 365, 9.2, 12.4, font, black) - 4;
     };
 
     const drawFooter = (page, pageNumber) => {
@@ -671,7 +697,7 @@ export default function App() {
     page.drawText("Hash SHA-256:", { x: 45, y, size: 9.5, font: bold, color: black });
     y = drawWrapped(page, metaFinal.hash, 120, y, 420, 8.3, 11.5, font, black);
     y -= 12;
-    page.drawText("Contato: suporte@seudominio.com", { x: 45, y, size: 9.5, font, color: black });
+    page.drawText("Contato: suportenexalab@gmail.com", { x: 45, y, size: 9.5, font, color: black });
 
     const bytes = await pdfDoc.save({ useObjectStreams: true });
     return new Blob([bytes], { type: "application/pdf" });
